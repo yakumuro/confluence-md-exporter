@@ -57,6 +57,70 @@ test('routes PlantUML code fences to the PlantUML macro', function () {
   assert.doesNotMatch(result.storage, /ac:name="expand"/);
 });
 
+test('allows code macro parameters and wrappers to be omitted', function () {
+  const markdown = [fence + 'mermaid', 'sequenceDiagram', 'A->>B: call', fence].join('\n');
+  const result = importer.parseMarkdown(markdown, {
+    macroOptions: {
+      codeMacroTitle: false,
+      codeLanguage: false,
+      codeExpand: false
+    }
+  });
+  assert.match(result.storage, /<ac:structured-macro ac:name="code">/);
+  assert.doesNotMatch(result.storage, /ac:name="expand"|ac:name="title"|ac:name="language"/);
+  assert.match(result.storage, /sequenceDiagram/);
+});
+
+test('falls back to preformatted text and code when code macros are disabled', function () {
+  const result = importer.parseMarkdown([fence + 'sql', 'select 1;', fence].join('\n'), {
+    macroOptions: {
+      codeMacro: false,
+      codeExpand: false
+    }
+  });
+  assert.match(result.storage, /<pre><code>select 1;<\/code><\/pre>/);
+  assert.doesNotMatch(result.storage, /ac:name="code"|ac:name="expand"/);
+});
+
+test('falls back to a language-tagged code block when PlantUML macros are disabled', function () {
+  const result = importer.parseMarkdown([
+    fence + 'plantuml',
+    '@startuml',
+    'Alice -> Bob: call',
+    '@enduml',
+    fence
+  ].join('\n'), {
+    macroOptions: {
+      plantUmlMacro: false,
+      codeExpand: false
+    }
+  });
+  assert.doesNotMatch(result.storage, /ac:name="plantuml"/);
+  assert.match(result.storage, /ac:name="code"/);
+  assert.match(result.storage, /ac:name="language">plantuml<\/ac:parameter>/);
+});
+
+test('retains Mermaid as a language-tagged code macro for compatible Confluence apps', function () {
+  const markdown = [fence + 'mermaid', 'sequenceDiagram', 'A->>B: call', fence].join('\n');
+  const result = importer.parseMarkdown(markdown);
+  assert.match(result.storage, /ac:name="code"/);
+  assert.match(result.storage, /ac:name="language">mermaid<\/ac:parameter>/);
+  assert.match(result.storage, /sequenceDiagram/);
+});
+
+test('keeps table-of-contents markers and alert blockquotes as ordinary Markdown content', function () {
+  const result = importer.parseMarkdown([
+    '[TOC]',
+    '',
+    '> [!WARNING]',
+    '> Check before continuing.'
+  ].join('\n'));
+  assert.match(result.storage, /<p>\[TOC\]<\/p>/);
+  assert.match(result.storage, /<blockquote>/);
+  assert.match(result.storage, /\[!WARNING\]/);
+  assert.doesNotMatch(result.storage, /ac:name="toc"|ac:name="warning"|ac:name="note"/);
+});
+
 test('escapes XML text and safely splits CDATA terminators in code', function () {
   const markdown = [fence + 'sql', "select '<tag>' & ']]>';", fence].join('\n');
   const result = importer.parseMarkdown(markdown);

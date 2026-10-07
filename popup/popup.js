@@ -27,11 +27,14 @@
 
   function cacheElements() {
     [
-      'refresh', 'pageTitle', 'pageUrl', 'alert', 'settings', 'treeBlock', 'tree',
+      'refresh', 'exportTab', 'importTab', 'exportPanel', 'importPanel',
+      'alert', 'settings', 'treeBlock', 'tree',
       'treeInfo', 'selectAll', 'selectNone', 'settingsAttachments', 'attachments',
       'outputHint', 'download', 'cancel', 'progressBlock', 'progressFill',
       'progressText', 'errorsToggle', 'errors', 'importCard', 'markdownFile',
-      'markdownFileName', 'replaceConfirmOption', 'replaceConfirmed', 'importButton', 'importStatus'
+      'importButton', 'importStatus',
+      'importCodeMacro', 'importCodeTitle', 'importCodeLanguage', 'importExpandMacro',
+      'importExpandTitle', 'importPlantUmlMacro'
     ].forEach(function (id) {
       el[id] = document.getElementById(id);
     });
@@ -57,6 +60,34 @@
     return checked ? checked.value : 'append';
   }
 
+  function getImportMacroOptions() {
+    return {
+      codeMacro: el.importCodeMacro.checked,
+      codeMacroTitle: el.importCodeTitle.checked,
+      codeLanguage: el.importCodeLanguage.checked,
+      codeExpand: el.importExpandMacro.checked,
+      codeExpandTitle: el.importExpandTitle.checked,
+      plantUmlMacro: el.importPlantUmlMacro.checked
+    };
+  }
+
+  function updateMacroOptionControls() {
+    el.importCodeTitle.disabled = !el.importCodeMacro.checked;
+    el.importCodeLanguage.disabled = !el.importCodeMacro.checked;
+    el.importExpandTitle.disabled = !el.importExpandMacro.checked;
+  }
+
+  function selectView(name) {
+    const isExport = name === 'export';
+    el.exportTab.setAttribute('aria-selected', String(isExport));
+    el.exportTab.tabIndex = isExport ? 0 : -1;
+    el.importTab.setAttribute('aria-selected', String(!isExport));
+    el.importTab.tabIndex = isExport ? -1 : 0;
+    el.exportPanel.classList.toggle('hidden', !isExport);
+    el.importPanel.classList.toggle('hidden', isExport);
+    el.importPanel.hidden = isExport;
+  }
+
   function setImportStatus(text, type) {
     el.importStatus.textContent = text || '';
     el.importStatus.className = 'import-status' + (type ? ' ' + type : '') + (text ? '' : ' hidden');
@@ -64,11 +95,8 @@
 
   function updateImportControls() {
     if (!el.importButton) return;
-    const mode = currentImportMode();
     const file = el.markdownFile.files && el.markdownFile.files[0];
-    el.replaceConfirmOption.classList.toggle('hidden', mode !== 'replace');
-    el.importButton.disabled = !pageInfo || !file || importing || running
-      || (mode === 'replace' && !el.replaceConfirmed.checked);
+    el.importButton.disabled = !pageInfo || !file || importing || running;
     el.download.disabled = !pageInfo || running || importing;
   }
 
@@ -119,6 +147,21 @@
         const stored = data && data[SETTINGS_KEY] ? data[SETTINGS_KEY] : {};
         document.querySelector('input[name="mode"][value="' + (stored.mode === 'tree' ? 'tree' : 'page') + '"]').checked = true;
         el.attachments.checked = stored.includeAttachments !== false;
+        const savedMacroOptions = stored.importMacroOptions || {};
+        const macroOptionElements = {
+          codeMacro: el.importCodeMacro,
+          codeMacroTitle: el.importCodeTitle,
+          codeLanguage: el.importCodeLanguage,
+          codeExpand: el.importExpandMacro,
+          codeExpandTitle: el.importExpandTitle,
+          plantUmlMacro: el.importPlantUmlMacro
+        };
+        Object.keys(macroOptionElements).forEach(function (key) {
+          if (typeof savedMacroOptions[key] === 'boolean') {
+            macroOptionElements[key].checked = savedMacroOptions[key];
+          }
+        });
+        updateMacroOptionControls();
         resolve();
       });
     });
@@ -128,7 +171,8 @@
     const payload = {};
     payload[SETTINGS_KEY] = {
       mode: currentMode(),
-      includeAttachments: el.attachments.checked
+      includeAttachments: el.attachments.checked,
+      importMacroOptions: getImportMacroOptions()
     };
     chrome.storage.local.set(payload);
   }
@@ -277,12 +321,9 @@
 
   async function refreshPage() {
     showAlert(null);
-    el.pageTitle.textContent = 'Определяем страницу…';
-    el.pageUrl.textContent = '';
     const response = await sendToTab({ type: 'PREPARE' });
     if (!response || !response.ok) {
       pageInfo = null;
-      el.pageTitle.textContent = 'Страница Confluence не определена';
       el.settings.classList.add('hidden');
       el.settingsAttachments.classList.add('hidden');
       el.importCard.classList.add('hidden');
@@ -292,11 +333,6 @@
       return;
     }
     pageInfo = response.page;
-    el.pageTitle.textContent = pageInfo.title || ('page-' + pageInfo.id);
-    el.pageUrl.textContent = pageInfo.url || '';
-    if (pageInfo.spaceKey) {
-      el.pageUrl.textContent = (pageInfo.url || '') + '  ·  пространство ' + pageInfo.spaceKey;
-    }
     el.settings.classList.remove('hidden');
     el.settingsAttachments.classList.remove('hidden');
     el.importCard.classList.remove('hidden');
@@ -395,12 +431,18 @@
 
     const response = await sendToTab({ type: 'START', options: options });
     if (!response || !response.ok) {
+      if (response && response.job) {
+        applyJob(response.job);
+        return;
+      }
       running = false;
       el.cancel.classList.add('hidden');
       updateImportControls();
       el.progressBlock.classList.add('hidden');
       showAlert((response && response.error) || 'Не удалось запустить выгрузку');
+      return;
     }
+    if (response.job) applyJob(response.job);
   }
 
   async function onCancel() {
@@ -429,7 +471,7 @@
         type: 'IMPORT_MD',
         markdown: markdown,
         mode: currentImportMode(),
-        confirmedReplace: el.replaceConfirmed.checked
+        macroOptions: getImportMacroOptions()
       });
       if (!response || !response.ok) {
         setImportStatus((response && response.error) || 'Не удалось импортировать Markdown.', 'error');
@@ -445,6 +487,25 @@
   }
 
   function bindEvents() {
+    const tabs = [el.exportTab, el.importTab];
+    for (const tab of tabs) {
+      tab.addEventListener('click', function () {
+        selectView(tab.dataset.panel);
+      });
+      tab.addEventListener('keydown', function (event) {
+        let nextIndex = -1;
+        const currentIndex = tabs.indexOf(tab);
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % tabs.length;
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (currentIndex + tabs.length - 1) % tabs.length;
+        if (event.key === 'Home') nextIndex = 0;
+        if (event.key === 'End') nextIndex = tabs.length - 1;
+        if (nextIndex < 0) return;
+        event.preventDefault();
+        tabs[nextIndex].focus();
+        selectView(tabs[nextIndex].dataset.panel);
+      });
+    }
+
     for (const radio of document.querySelectorAll('input[name="mode"]')) {
       radio.addEventListener('change', function () {
         const mode = currentMode();
@@ -475,20 +536,24 @@
     el.download.addEventListener('click', onDownload);
     el.cancel.addEventListener('click', onCancel);
     el.markdownFile.addEventListener('change', function () {
-      const file = el.markdownFile.files && el.markdownFile.files[0];
-      el.replaceConfirmed.checked = false;
-      el.markdownFileName.textContent = file ? file.name + ' · ' + Math.max(1, Math.ceil(file.size / 1024)) + ' КБ' : 'Файл не выбран';
       setImportStatus('');
       updateImportControls();
     });
     for (const radio of document.querySelectorAll('input[name="importMode"]')) {
       radio.addEventListener('change', function () {
-        if (currentImportMode() === 'replace') el.replaceConfirmed.checked = false;
         updateImportControls();
       });
     }
-    el.replaceConfirmed.addEventListener('change', updateImportControls);
     el.importButton.addEventListener('click', onImportMarkdown);
+    [
+      el.importCodeMacro, el.importCodeTitle, el.importCodeLanguage, el.importExpandMacro,
+      el.importExpandTitle, el.importPlantUmlMacro
+    ].forEach(function (input) {
+      input.addEventListener('change', function () {
+        updateMacroOptionControls();
+        saveSettings();
+      });
+    });
     el.refresh.addEventListener('click', async function () {
       treeLoaded = false;
       treeNodes = [];
@@ -506,6 +571,11 @@
       if (area !== 'local' || tabId == null) return;
       const change = changes[jobStorageKey()];
       if (change && change.newValue) applyJob(change.newValue);
+    });
+
+    chrome.runtime.onMessage.addListener(function (message) {
+      if (!message || message.type !== 'MD_EXPORT_JOB_UPDATE' || message.tabId !== tabId || !message.job) return;
+      applyJob(message.job);
     });
   }
 
@@ -527,7 +597,6 @@
     const ping = await ensureContentScript();
     if (!ping || !ping.ok) {
       showAlert((ping && ping.error) || 'Нет доступа к странице. Откройте страницу Confluence и повторите попытку.');
-      el.pageTitle.textContent = 'Страница Confluence не определена';
       return;
     }
     await refreshPage();

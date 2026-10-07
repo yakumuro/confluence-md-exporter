@@ -21,6 +21,8 @@
   let importing = false;
   let cancelRequested = false;
   let job = null;
+  let persistPending = false;
+  let persistInProgress = false;
 
   function jobKey() {
     return 'job:' + (tabId == null ? 'unknown' : tabId);
@@ -30,13 +32,57 @@
     return error && error.message ? error.message : String(error);
   }
 
+  function snapshotJob() {
+    if (!job) return null;
+    return Object.assign({}, job, {
+      files: Array.isArray(job.files) ? job.files.slice() : [],
+      errors: Array.isArray(job.errors) ? job.errors.slice() : []
+    });
+  }
+
+  function notifyPopup() {
+    if (tabId == null || !job) return;
+    try {
+      chrome.runtime.sendMessage({
+        type: 'MD_EXPORT_JOB_UPDATE',
+        tabId: tabId,
+        job: snapshotJob()
+      }, function () {
+        // The popup may be closed while an export continues in the page.
+        if (chrome.runtime.lastError) { /* ignore */ }
+      });
+    } catch (e) { /* ignore */ }
+  }
+
   function persist() {
     if (tabId == null || !job) return;
-    const payload = {};
-    payload[jobKey()] = job;
-    try {
-      chrome.storage.local.set(payload);
-    } catch (e) { /* ignore */ }
+    notifyPopup();
+    persistPending = true;
+    if (persistInProgress) return;
+
+    persistInProgress = true;
+    function writePending() {
+      if (!persistPending) {
+        persistInProgress = false;
+        return;
+      }
+
+      persistPending = false;
+      const payload = {};
+      payload[jobKey()] = snapshotJob();
+
+      try {
+        chrome.storage.local.set(payload, function () {
+          // Read lastError inside the callback to acknowledge storage failures.
+          if (chrome.runtime.lastError) { /* ignore */ }
+          writePending();
+        });
+      } catch (e) {
+        writePending();
+      }
+    }
+
+    writePending();
   }
 
   function startJob(total, message) {
@@ -191,10 +237,7 @@
     if (running || importing) return { ok: false, error: 'Другая операция уже выполняется' };
     if (!MarkdownImporter) return { ok: false, error: 'Модуль импорта Markdown не загружен' };
 
-    const mode = message && message.mode === 'replace' ? 'replace' : 'append';
-    if (mode === 'replace' && message.confirmedReplace !== true) {
-      return { ok: false, error: 'Для замены содержимого подтвердите действие в окне расширения' };
-    }
+    const mode = message && message.mode === 'prepend' ? 'prepend' : 'append';
     if (typeof (message && message.markdown) !== 'string') {
       return { ok: false, error: 'Не удалось прочитать содержимое Markdown-файла' };
     }
@@ -204,13 +247,16 @@
       const pageId = await Api.resolvePageIdFromUrl();
       if (!pageId) throw new Error('Не удалось определить страницу Confluence в активной вкладке');
       const page = await Api.getPage(pageId, ['version', 'space']);
-      const converted = MarkdownImporter.parseMarkdown(message.markdown, { pageTitle: page.title || '' });
+      const converted = MarkdownImporter.parseMarkdown(message.markdown, {
+        pageTitle: page.title || '',
+        macroOptions: message.macroOptions
+      });
       const saved = await Api.updatePage(pageId, converted.storage, mode);
       return {
         ok: true,
         page: saved,
         mode: mode,
-        message: (mode === 'append' ? 'Содержимое добавлено в конец страницы «' : 'Содержимое страницы «')
+        message: (mode === 'prepend' ? 'Содержимое добавлено в начало страницы «' : 'Содержимое добавлено в конец страницы «')
           + (saved.title || page.title || pageId) + '» обновлено (версия ' + saved.version
           + '). Обновите вкладку, чтобы увидеть результат.'
       };
@@ -457,9 +503,21 @@
         sendResponse({ ok: false, error: 'Другая операция уже выполняется' });
         return undefined;
       }
-      sendResponse({ ok: true, started: true });
-      start(options);
-      return undefined;
+      const previousJob = job;
+      start(options)
+        .then(function (result) {
+          sendResponse(Object.assign({}, result, {
+            job: job && job !== previousJob ? snapshotJob() : null
+          }));
+        })
+        .catch(function (error) {
+          sendResponse({
+            ok: false,
+            error: errorMessage(error),
+            job: job && job !== previousJob ? snapshotJob() : null
+          });
+        });
+      return true;
     }
 
     if (message.type === 'CANCEL') {

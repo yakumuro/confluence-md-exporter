@@ -49,7 +49,7 @@ test('updates the current storage body using the next page version', async funct
   }
 });
 
-test('replaces current body instead of appending when requested', async function () {
+test('prepends imported storage before existing page content', async function () {
   const previous = { fetch: global.fetch, location: global.location, document: global.document };
   const calls = [];
   global.location = { origin: 'https://confluence.example.test', pathname: '/' };
@@ -65,8 +65,8 @@ test('replaces current body instead of appending when requested', async function
   };
 
   try {
-    await api.updatePage('9', '<p>New</p>', 'replace');
-    assert.equal(JSON.parse(calls[1].options.body).body.storage.value, '<p>New</p>');
+    await api.updatePage('9', '<p>New</p>', 'prepend');
+    assert.equal(JSON.parse(calls[1].options.body).body.storage.value, '<p>New</p>\n<p>Old</p>');
   } finally {
     global.fetch = previous.fetch;
     if (previous.location === undefined) delete global.location;
@@ -199,7 +199,7 @@ test('does not fetch attachment URLs from another origin with page credentials',
   }
 });
 
-test('does not automatically retry a replace after HTTP 409', async function () {
+test('does not duplicate a prepended block when retry reads a page that already contains it', async function () {
   const previous = { fetch: global.fetch, location: global.location, document: global.document };
   const calls = [];
   global.location = { origin: 'https://confluence.example.test', pathname: '/' };
@@ -207,19 +207,20 @@ test('does not automatically retry a replace after HTTP 409', async function () 
   global.fetch = async function (url, options) {
     calls.push({ url: url, options: options });
     if (options.method === 'GET') {
+      const requestedVersion = new URL(url).searchParams.get('version');
+      const version = requestedVersion ? Number(requestedVersion) : 2;
       return new Response(JSON.stringify({
-        id: '9', title: 'Page', version: { number: 2 }, body: { storage: { value: '<p>Old</p>' } }
+        id: '9', title: 'Page', version: { number: version },
+        body: { storage: { value: version === 2 ? '<p>Old</p>' : '<p>New</p>\n<p>Old</p>' } }
       }), { status: 200 });
     }
-    return new Response('{"statusCode":409,"message":"version conflict","data":{"errors":[{"message":{"translation":"Draft conflict detail"}}]}}', { status: 409 });
+    return new Response('{"message":"Version must be incremented on update. Current version is: 3."}', { status: 409 });
   };
 
   try {
-    await assert.rejects(api.updatePage('9', '<p>New</p>', 'replace'), function (error) {
-      return /HTTP 409/.test(error.message) && /version conflict/.test(error.message)
-        && /Draft conflict detail/.test(error.message) && /прочитана версия 2/.test(error.message);
-    });
-    assert.equal(calls.length, 2);
+    const result = await api.updatePage('9', '<p>New</p>', 'prepend');
+    assert.equal(result.version, 3);
+    assert.equal(calls.filter(function (call) { return call.options.method === 'PUT'; }).length, 1);
   } finally {
     global.fetch = previous.fetch;
     if (previous.location === undefined) delete global.location;

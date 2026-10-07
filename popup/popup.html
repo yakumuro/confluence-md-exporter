@@ -2,102 +2,219 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <title>Confluence → Markdown</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confluence Markdown</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="wrap">
-    <div class="head">
+    <header class="head">
       <div class="head-row">
-        <div class="head-title">Confluence → Markdown</div>
-        <button id="refresh" class="link" type="button">Обновить</button>
-      </div>
-      <div id="pageTitle" class="head-sub">Определяем страницу…</div>
-      <div id="pageUrl" class="head-url"></div>
-    </div>
-
-    <div id="alert" class="alert hidden"></div>
-
-    <div id="settings" class="card hidden">
-      <div class="card-title">Что выгружать</div>
-      <label class="option">
-        <input type="radio" name="mode" value="page" checked>
-        <span class="option-body">
-          <b>Только текущую страницу</b>
-          <em>Один md-файл с названием страницы</em>
-        </span>
-      </label>
-      <label class="option">
-        <input type="radio" name="mode" value="tree">
-        <span class="option-body">
-          <b>Страницу и дочерние</b>
-          <em>ZIP-архив с папками как в Confluence</em>
-        </span>
-      </label>
-      <div id="treeBlock" class="hidden">
-        <div class="tree-toolbar">
-          <button id="selectAll" class="link" type="button">Выбрать все</button>
-          <button id="selectNone" class="link" type="button">Снять все</button>
-          <span id="treeInfo" class="muted"></span>
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M5 7h14M5 7l3-3M5 7l3 3M19 17H5m14 0-3-3m3 3-3 3" />
+            </svg>
+          </div>
+          <div class="head-title">Confluence <span>Markdown</span></div>
         </div>
-        <div id="tree" class="tree"><div class="muted">Загрузка структуры…</div></div>
+        <button id="refresh" class="icon-button" type="button"
+          aria-label="Обновить страницу Confluence" title="Обновить страницу Confluence">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M20 11a8.1 8.1 0 0 0-14.7-4L3 10" />
+            <path d="M3 4v6h6" />
+            <path d="M4 13a8.1 8.1 0 0 0 14.7 4L21 14" />
+            <path d="M21 20v-6h-6" />
+          </svg>
+        </button>
       </div>
-    </div>
+    </header>
 
-    <div id="settingsAttachments" class="card hidden">
-      <label class="option">
-        <input type="checkbox" id="attachments" checked>
-        <span class="option-body">
-          <b>Выгружать вложения</b>
-          <em>Изображения и файлы попадут в папку attachments</em>
-        </span>
-      </label>
-    </div>
+    <div id="alert" class="alert hidden" role="alert"></div>
 
-    <div id="importCard" class="card hidden">
-      <div class="card-title">Импорт Markdown в открытую страницу</div>
-      <label class="file-option">
-        <span>Выберите локальный файл .md</span>
-        <input id="markdownFile" type="file" accept=".md,.markdown,text/markdown">
-      </label>
-      <div id="markdownFileName" class="muted">Файл не выбран</div>
-      <label class="option">
-        <input type="radio" name="importMode" value="append" checked>
-        <span class="option-body">
-          <b>Добавить в конец страницы</b>
-          <em>Текущее содержимое останется</em>
-        </span>
-      </label>
-      <label class="option">
-        <input type="radio" name="importMode" value="replace">
-        <span class="option-body">
-          <b>Заменить содержимое страницы</b>
-          <em>Заголовок страницы останется прежним</em>
-        </span>
-      </label>
-      <label id="replaceConfirmOption" class="option hidden">
-        <input id="replaceConfirmed" type="checkbox">
-        <span class="option-body">
-          <b>Подтверждаю замену содержимого</b>
-          <em>Старое тело страницы будет заменено</em>
-        </span>
-      </label>
-      <div class="import-note">Fenced code blocks станут макросами «Раскрыть» с Code Block. Блоки PlantUML требуют установленного макроса PlantUML.</div>
-      <button id="importButton" class="secondary" type="button" disabled>Импортировать в Confluence</button>
-      <div id="importStatus" class="import-status hidden" role="status"></div>
-    </div>
+    <nav id="viewTabs" class="view-tabs" role="tablist" aria-label="Операции с Markdown">
+      <button id="exportTab" class="view-tab" type="button" role="tab"
+        aria-selected="true" aria-controls="exportPanel" tabindex="0" data-panel="export">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 4v11" />
+          <path d="m7 11 5 5 5-5" />
+          <path d="M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
+        </svg>
+        Экспорт
+      </button>
+      <button id="importTab" class="view-tab" type="button" role="tab"
+        aria-selected="false" aria-controls="importPanel" tabindex="-1" data-panel="import">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 15V4" />
+          <path d="m7 9 5-5 5 5" />
+          <path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+        </svg>
+        Импорт
+      </button>
+    </nav>
 
-    <div id="outputHint" class="hint hidden"></div>
+    <main>
+      <section id="exportPanel" class="tab-panel" role="tabpanel" aria-labelledby="exportTab">
+        <div class="panel-heading">
+          <div>
+            <div class="panel-kicker">ЭКСПОРТ</div>
+            <h2>Скачать страницу</h2>
+          </div>
+          <div class="help-wrap">
+            <button class="info-button" type="button" aria-label="Как пользоваться экспортом"
+              aria-describedby="exportHelp">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+                <path d="M12 17h.01" />
+              </svg>
+            </button>
+            <div id="exportHelp" class="help-tooltip" role="tooltip">
+              Откройте нужную страницу Confluence, выберите режим выгрузки и нажмите «Скачать».
+            </div>
+          </div>
+        </div>
 
-    <button id="download" class="primary" type="button" disabled>Скачать</button>
-    <button id="cancel" class="ghost hidden" type="button">Отменить экспорт</button>
+        <div id="settings" class="card hidden">
+          <div class="card-title">Что выгружать</div>
+          <label class="option">
+            <input type="radio" name="mode" value="page" checked>
+            <span class="option-body">
+              <b>Только текущую страницу</b>
+              <em>Один md-файл с названием страницы</em>
+            </span>
+          </label>
+          <label class="option">
+            <input type="radio" name="mode" value="tree">
+            <span class="option-body">
+              <b>Страницу и дочерние</b>
+              <em>ZIP-архив с папками как в Confluence</em>
+            </span>
+          </label>
+          <div id="treeBlock" class="hidden">
+            <div class="tree-toolbar">
+              <button id="selectAll" class="link" type="button">Выбрать все</button>
+              <button id="selectNone" class="link" type="button">Снять все</button>
+              <span id="treeInfo" class="muted"></span>
+            </div>
+            <div id="tree" class="tree"><div class="muted">Загрузка структуры…</div></div>
+          </div>
+        </div>
 
-    <div id="progressBlock" class="card hidden">
-      <div class="progress"><div id="progressFill"></div></div>
-      <div id="progressText" class="muted">…</div>
-      <button id="errorsToggle" class="link hidden" type="button">Показать замечания</button>
-      <ul id="errors" class="errors hidden"></ul>
-    </div>
+        <div id="settingsAttachments" class="card hidden">
+          <label class="option">
+            <input type="checkbox" id="attachments" checked>
+            <span class="option-body">
+              <b>Выгружать вложения</b>
+              <em>Изображения и файлы попадут в папку attachments</em>
+            </span>
+          </label>
+        </div>
+
+        <div id="outputHint" class="hint hidden"></div>
+        <button id="download" class="primary" type="button" disabled>
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 4v11" />
+            <path d="m7 11 5 5 5-5" />
+            <path d="M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
+          </svg>
+          Скачать
+        </button>
+        <button id="cancel" class="ghost hidden" type="button">Отменить экспорт</button>
+
+        <div id="progressBlock" class="card hidden">
+          <div class="progress"><div id="progressFill"></div></div>
+          <div id="progressText" class="muted">…</div>
+          <button id="errorsToggle" class="link hidden" type="button">Показать замечания</button>
+          <ul id="errors" class="errors hidden"></ul>
+        </div>
+      </section>
+
+      <section id="importPanel" class="tab-panel hidden" role="tabpanel" aria-labelledby="importTab" hidden>
+        <div class="panel-heading">
+          <div>
+            <div class="panel-kicker">ИМПОРТ</div>
+            <h2>Загрузить Markdown</h2>
+          </div>
+          <div class="help-wrap">
+            <button class="info-button" type="button" aria-label="Как пользоваться импортом"
+              aria-describedby="importHelp">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+                <path d="M12 17h.01" />
+              </svg>
+            </button>
+            <div id="importHelp" class="help-tooltip" role="tooltip">
+              Откройте страницу Confluence в режиме редактирования. Выберите Markdown-файл и укажите, добавить его в начало или конец страницы.
+            </div>
+          </div>
+        </div>
+
+        <div id="importCard" class="card hidden">
+          <label class="file-option" for="markdownFile">
+            <input id="markdownFile" type="file" accept=".md,.markdown,text/markdown" aria-label="Выбрать файл Markdown">
+          </label>
+          <div class="card-divider"></div>
+          <div class="field-label">Что сделать с содержимым страницы</div>
+          <label class="option">
+            <input type="radio" name="importMode" value="prepend">
+            <span class="option-body">
+              <b>Добавить в начало страницы</b>
+              <em>Содержимое будет добавлено в начало страницы</em>
+            </span>
+          </label>
+          <label class="option">
+            <input type="radio" name="importMode" value="append" checked>
+            <span class="option-body">
+              <b>Добавить в конец страницы</b>
+              <em>Содержимое будет добавлено в конец страницы</em>
+            </span>
+          </label>
+          <fieldset class="macro-options">
+            <legend>Макросы и дополнительные преобразования</legend>
+            <label class="macro-option">
+              <input id="importCodeMacro" type="checkbox" checked>
+              <span>Блоки кода как макрос Code Block</span>
+            </label>
+            <div class="macro-suboptions">
+              <label class="macro-option">
+                <input id="importCodeTitle" type="checkbox" checked>
+                <span>Добавлять заголовок «Блок кода»</span>
+              </label>
+              <label class="macro-option">
+                <input id="importCodeLanguage" type="checkbox" checked>
+                <span>Передавать язык кода, например sql или mermaid</span>
+              </label>
+            </div>
+            <label class="macro-option">
+              <input id="importExpandMacro" type="checkbox" checked>
+              <span>Оборачивать блоки кода в «Раскрыть»</span>
+            </label>
+            <div class="macro-suboptions">
+              <label class="macro-option">
+                <input id="importExpandTitle" type="checkbox" checked>
+                <span>Добавлять заголовок «Раскрыть»</span>
+              </label>
+            </div>
+            <label class="macro-option">
+              <input id="importPlantUmlMacro" type="checkbox" checked>
+              <span>Преобразовывать PlantUML в макрос диаграммы</span>
+            </label>
+          </fieldset>
+          <button id="importButton" class="primary" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 15V4" />
+              <path d="m7 9 5-5 5 5" />
+              <path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+            </svg>
+            Импортировать в Confluence
+          </button>
+          <div id="importStatus" class="import-status hidden" role="status"></div>
+        </div>
+      </section>
+
+    </main>
   </div>
 
   <script src="popup.js"></script>
