@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Confluence → Markdown</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <div class="head-row">
+        <div class="head-title">Confluence → Markdown</div>
+        <button id="refresh" class="link" type="button">Обновить</button>
+      </div>
+      <div id="pageTitle" class="head-sub">Определяем страницу…</div>
+      <div id="pageUrl" class="head-url"></div>
+    </div>
+
+    <div id="alert" class="alert hidden"></div>
+
+    <div id="settings" class="card hidden">
+      <div class="card-title">Что выгружать</div>
+      <label class="option">
+        <input type="radio" name="mode" value="page" checked>
+        <span class="option-body">
+          <b>Только текущую страницу</b>
+          <em>Один md-файл с названием страницы</em>
+        </span>
+      </label>
+      <label class="option">
+        <input type="radio" name="mode" value="tree">
+        <span class="option-body">
+          <b>Страницу и дочерние</b>
+          <em>ZIP-архив с папками как в Confluence</em>
+        </span>
+      </label>
+      <div id="treeBlock" class="hidden">
+        <div class="tree-toolbar">
+          <button id="selectAll" class="link" type="button">Выбрать все</button>
+          <button id="selectNone" class="link" type="button">Снять все</button>
+          <span id="treeInfo" class="muted"></span>
+        </div>
+        <div id="tree" class="tree"><div class="muted">Загрузка структуры…</div></div>
+      </div>
+    </div>
+
+    <div id="settingsAttachments" class="card hidden">
+      <label class="option">
+        <input type="checkbox" id="attachments" checked>
+        <span class="option-body">
+          <b>Выгружать вложения</b>
+          <em>Изображения и файлы попадут в папку attachments</em>
+        </span>
+      </label>
+    </div>
+
+    <div id="importCard" class="card hidden">
+      <div class="card-title">Импорт Markdown в открытую страницу</div>
+      <label class="file-option">
+        <span>Выберите локальный файл .md</span>
+        <input id="markdownFile" type="file" accept=".md,.markdown,text/markdown">
+      </label>
+      <div id="markdownFileName" class="muted">Файл не выбран</div>
+      <label class="option">
+        <input type="radio" name="importMode" value="append" checked>
+        <span class="option-body">
+          <b>Добавить в конец страницы</b>
+          <em>Текущее содержимое останется</em>
+        </span>
+      </label>
+      <label class="option">
+        <input type="radio" name="importMode" value="replace">
+        <span class="option-body">
+          <b>Заменить содержимое страницы</b>
+          <em>Заголовок страницы останется прежним</em>
+        </span>
+      </label>
+      <label id="replaceConfirmOption" class="option hidden">
+        <input id="replaceConfirmed" type="checkbox">
+        <span class="option-body">
+          <b>Подтверждаю замену содержимого</b>
+          <em>Старое тело страницы будет заменено</em>
+        </span>
+      </label>
+      <div class="import-note">Fenced code blocks станут макросами «Раскрыть» с Code Block. Блоки PlantUML требуют установленного макроса PlantUML.</div>
+      <button id="importButton" class="secondary" type="button" disabled>Импортировать в Confluence</button>
+      <div id="importStatus" class="import-status hidden" role="status"></div>
+    </div>
+
+    <div id="outputHint" class="hint hidden"></div>
+
+    <button id="download" class="primary" type="button" disabled>Скачать</button>
+    <button id="cancel" class="ghost hidden" type="button">Отменить экспорт</button>
+
+    <div id="progressBlock" class="card hidden">
+      <div class="progress"><div id="progressFill"></div></div>
+      <div id="progressText" class="muted">…</div>
+      <button id="errorsToggle" class="link hidden" type="button">Показать замечания</button>
+      <ul id="errors" class="errors hidden"></ul>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
