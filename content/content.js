@@ -151,55 +151,26 @@
     };
   }
 
-  function uniqueSegmentFactory() {
-    const used = new Map();
-    return function (parentKey, title, fallbackId) {
-      let set = used.get(parentKey);
-      if (!set) {
-        set = new Set();
-        used.set(parentKey, set);
+  function countSelectedPages(tree) {
+    let total = 0;
+    (function walk(nodes) {
+      for (const node of nodes || []) {
+        if (node.selected !== false) total += 1;
+        walk(node.children);
       }
-      const base = Converter.sanitizeFileName(title, 'page-' + fallbackId);
-      let candidate = base;
-      let index = 2;
-      while (set.has(candidate.toLowerCase())) {
-        candidate = base + ' (' + index + ')';
-        index += 1;
-      }
-      set.add(candidate.toLowerCase());
-      return candidate;
-    };
+    })(tree);
+    return total;
   }
 
-  function collectPages(root, tree) {
-    const uniqueSegment = uniqueSegmentFactory();
-    const pages = [];
-    const rootPath = [uniqueSegment('#root', root.title, root.id)];
-    pages.push({
-      id: String(root.id),
-      title: root.title || ('page-' + root.id),
-      segments: rootPath,
-      selected: true,
-      isRoot: true
+  // Предупреждает, что часть имен в архиве сокращена ради совместимости с Проводником.
+  function shortenedHint() {
+    const planners = Array.prototype.slice.call(arguments).filter(Boolean);
+    const shortened = planners.some(function (planner) {
+      return planner.shortened && planner.shortened();
     });
-
-    (function walk(children, parentPath) {
-      const parentKey = parentPath.join('/');
-      for (const child of children || []) {
-        const segment = uniqueSegment(parentKey, child.title, child.id);
-        const path = parentPath.concat(segment);
-        pages.push({
-          id: String(child.id),
-          title: child.title || ('page-' + child.id),
-          segments: path,
-          selected: child.selected !== false,
-          isRoot: false
-        });
-        if (child.children && child.children.length) walk(child.children, path);
-      }
-    })(tree, rootPath);
-
-    return pages;
+    return shortened
+      ? '. Часть длинных имен сокращена, чтобы архив открывался в Проводнике Windows'
+      : '';
   }
 
   function relativeLink(fromSegments, target) {
@@ -283,7 +254,21 @@
       const rootTitle = rootPage.title || ('page-' + pageId);
       const spaceKey = rootPage.space && rootPage.space.key ? rootPage.space.key : '';
 
-      const allPages = collectPages({ id: pageId, title: rootTitle }, Array.isArray(options.tree) ? options.tree : []);
+      const treeNodes = Array.isArray(options.tree) ? options.tree : [];
+      const isMulti = countSelectedPages(treeNodes) + 1 > 1;
+      const pagePlanner = Converter.createPathPlanner({
+        // Проводник Windows не открывает архив с длинными путями внутри,
+        // поэтому в выгрузке дерева имена ограничиваются по размеру в байтах.
+        maxPathBytes: isMulti ? Converter.ZIP_ENTRY_PATH_LIMIT_BYTES : Infinity,
+        reserveAttachments: isMulti && !!options.includeAttachments
+      });
+      // Имена файлов внутри любого архива ограничиваются по той же причине:
+      // в одностраничной выгрузке это отдельный архив с вложениями.
+      const attachmentPlanner = Converter.createPathPlanner({
+        maxPathBytes: Converter.ZIP_ENTRY_PATH_LIMIT_BYTES
+      });
+
+      const allPages = Converter.planPageTree({ id: pageId, title: rootTitle }, treeNodes, pagePlanner);
       const pages = allPages.filter(function (page) { return page.selected; });
       if (!pages.length) throw new Error('Не выбрано ни одной страницы для экспорта');
       for (const treeError of (Array.isArray(options.treeErrors) ? options.treeErrors : [])) {
@@ -292,7 +277,6 @@
         addError('Не удалось загрузить дочерние страницы' + title + detail);
       }
 
-      const isMulti = pages.length > 1;
       const zip = isMulti ? new Zip.ZipWriter() : null;
       const attachmentZip = (!isMulti && options.includeAttachments) ? new Zip.ZipWriter() : null;
 
@@ -300,7 +284,7 @@
       for (const page of pages) {
         pageIndex.set(page.id, {
           segments: page.segments,
-          fileName: Converter.sanitizeFileName(page.title, 'page-' + page.id) + '.md',
+          fileName: page.fileName,
           title: page.title
         });
       }
@@ -343,17 +327,11 @@
           } catch (error) {
             addError('Не удалось получить список вложений страницы «' + item.title + '»: ' + errorMessage(error));
           }
-          const usedNames = new Set();
+          const pagePathBytes = isMulti ? Converter.utf8Length(currentSegments.join('/')) : 0;
+          const attachmentGroup = 'attachments:' + item.id;
           for (const attachment of attachments) {
             if (cancelRequested) break;
-            const base = Converter.sanitizeFileName(attachment.name, 'attachment');
-            let safeName = base;
-            let counter = 2;
-            while (usedNames.has(safeName.toLowerCase())) {
-              safeName = base + ' (' + counter + ')';
-              counter += 1;
-            }
-            usedNames.add(safeName.toLowerCase());
+            const safeName = attachmentPlanner.attachmentName(attachmentGroup, pagePathBytes, attachment.name, attachment.id);
             attachmentLookup.set(String(attachment.name).toLowerCase(), {
               name: attachment.name,
               safeName: safeName
@@ -433,7 +411,7 @@
           state: 'done',
           phase: 'done',
           current: pages.length,
-          message: 'Готово: ' + pages.length + ' стр., архив ' + archiveName,
+          message: 'Готово: ' + pages.length + ' стр., архив ' + archiveName + shortenedHint(pagePlanner, attachmentPlanner),
           files: [archiveName],
           finishedAt: Date.now()
         });
@@ -455,7 +433,7 @@
         state: 'done',
         phase: 'done',
         current: 1,
-        message: 'Готово: ' + files.join(', '),
+        message: 'Готово: ' + files.join(', ') + shortenedHint(attachmentPlanner),
         files: files,
         finishedAt: Date.now()
       });

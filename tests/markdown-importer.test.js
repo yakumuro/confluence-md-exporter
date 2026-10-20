@@ -152,6 +152,13 @@ test('converts common Markdown blocks and strips unsafe link schemes', function 
   assert.match(result.storage, /<th><p>Key<\/p><\/th>/);
 });
 
+test('preserves underscores inside snake_case identifiers while converting underscore emphasis', function () {
+  const result = importer.parseMarkdown('Поля db_name_field и user_id, а _важный текст_ должен остаться курсивом.');
+  assert.match(result.storage, /db_name_field и user_id/);
+  assert.match(result.storage, /<em>важный текст<\/em>/);
+  assert.doesNotMatch(result.storage, /<em>name<\/em>|<em>id<\/em>/);
+});
+
 test('converts Markdown horizontal rules to Confluence separators', function () {
   const result = importer.parseMarkdown(['Before', '', '---', '', '* * *', '', '___'].join('\n'));
   assert.equal((result.storage.match(/<hr \/>/g) || []).length, 3);
